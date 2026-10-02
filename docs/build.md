@@ -6,12 +6,17 @@
 ## Команды
 
 ```bash
-bin/1c-run.sh build          # рабочий образ: localhost/1c-client:<версия>
-bin/1c-run.sh build+test     # отладочный: localhost/1c-client:<версия>-test
-bin/1c-run.sh build+breeze   # рабочий образ + Breeze GTK-тема: <версия>-breeze
-bin/1c-run.sh build+start    # рабочий образ + запуск клиента
+bin/1c-run.sh build          # рабочий состав
+bin/1c-run.sh build+test     # + отладочные пакеты (strace, x11-apps, ...)
+bin/1c-run.sh build+breeze   # + Breeze GTK-тема
+bin/1c-run.sh build+start    # собрать и запустить клиента
 bin/1c-run.sh help           # справка по командам
 ```
+
+Тег всегда один: `localhost/1c-client:<версия>`. Каждая сборка
+перезаписывает его — **используется последний собранный вариант**
+(старые остаются у podman как dangling-образы). Чтобы вернуть рабочий
+состав, соберите `build` ещё раз.
 
 ## Аргументы сборки
 
@@ -28,8 +33,7 @@ bin/1c-run.sh help           # справка по командам
 | `PACKAGES_DEV` | `file strace xvfb x11-apps mc nano less bash-completion jq` | отладочные пакеты, ставятся только в `MODE=test` |
 
 Тег образа содержит версию платформы — по нему скрипт запуска выбирает
-образ. Тестовый образ получает суффикс `-test`, образ с темой — `-breeze`;
-рабочий тег они не перезаписывают.
+образ; суффиксов у тега нет.
 
 Про Breeze: тема кладётся в образ, но GTK-настройки контейнера не
 трогаются — вид диалогов остаётся системным GTK, пока пользователь сам

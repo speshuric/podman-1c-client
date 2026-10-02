@@ -2,21 +2,23 @@
 # Lifecycle for the 1C client container (rootless podman, host = KDE Wayland).
 #
 # Usage: 1c-run.sh [command] [args...]
-#   start        (default) launch a 1C client: the first argument is the 1C
-#                binary (1cv8c, 1cv8, 1cestart), the rest go to it as
-#                arguments. Any other first word (e.g. ENTERPRISE, DESIGNER,
-#                a connection string) is treated as an argument of 1cv8.
-#                Without arguments it launches 1cv8 with no arguments - the
-#                1C startup dialog.
-#   stop         stop the container
-#   status       container state + number of 1C processes
-#   build        build the regular image
-#   build+test   build the image with debug tooling (MODE=test)
-#   build+breeze build the regular image + Breeze GTK theme
-#   build+start  build the regular image, then `start`
-#   help         this help
-#
-# Unknown words fall back to `start`: `1c-run.sh` == `1c-run.sh start`.
+#   A command is one word or '+'-joined tokens (build/start/test/breeze):
+#     start        (default) launch a 1C client: the first argument is the
+#                  1C binary (1cv8c, 1cv8, 1cestart), the rest go to it.
+#                  Any other first word (e.g. ENTERPRISE, DESIGNER, a
+#                  connection string) is treated as an argument of 1cv8.
+#                  Without arguments it launches 1cv8 with no arguments -
+#                  the 1C startup dialog.
+#     stop         stop the container
+#     status       container state + number of 1C processes
+#     build        build the image
+#     help         this help
+#   Variants as '+' tokens: test (debug tooling, MODE=test) and breeze
+#   (Breeze GTK theme). Each build overwrites the single image tag - the
+#   last built variant is what start runs. Only the last two builds are
+#   kept by podman; older ones stay as dangling images.
+#   Examples: build+test, build+breeze, build+start, build+start+test.
+#   Plain `test` / `breeze` mean start (that variant had better be built).
 # Examples:
 #   1c-run.sh start 1cv8c /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
 #   1c-run.sh start 1cv8 DESIGNER /IBConnectionString 'File="..."'
@@ -46,7 +48,7 @@ BUS_SOCKET="/run/user/$(id -u)/bus"
 warn() { echo "WARNING: $*" >&2; }
 
 container_running() {
-    podman ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"
+    podman ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"
 }
 
 # ---- commands -------------------------------------------------------------
@@ -58,20 +60,21 @@ cmd_help() {
 }
 
 cmd_build() {
-    local mode="${1:-run}" breeze="${2:-0}"
-    local tag="$IMAGE"
-    # Test image gets a separate tag so it never replaces the run image.
-    [ "$mode" = test ] && tag="${IMAGE}-test"
-    # Breeze image gets its own tag too: it is opt-in, do not overwrite
-    # the theme-less default image silently.
-    [ "$breeze" = 1 ] && tag="${IMAGE}-breeze"
+    local mode="run" breeze=0
+    local token
+    for token in "$@"; do
+        case "$token" in
+            test)   mode="test" ;;
+            breeze) breeze=1 ;;
+        esac
+    done
     mkdir -p "$V"
     podman build \
         --build-arg DISTR_CLIENT="distr/1c-${PLATFORM_VERSION}" \
         --build-arg PLATFORM_VERSION="${PLATFORM_VERSION}" \
         --build-arg MODE="${mode}" \
         --build-arg BREEZE="${breeze}" \
-        -t "$tag" \
+        -t "$IMAGE" \
         -f client/Containerfile "$PROJECT_DIR" || { warn "build failed"; exit 1; }
 }
 
@@ -81,7 +84,7 @@ cmd_stop() {
 }
 
 cmd_status() {
-    if ! container_running; then
+    if ! container_running "$CONTAINER"; then
         echo "container: not running"
         return 0
     fi
@@ -116,7 +119,7 @@ cmd_start() {
     # dialogs; the 1C file dialogs do not use the portal, adr/0008).
     [ -S "$BUS_SOCKET" ] && mounts+=(-v "$BUS_SOCKET:/run/user/1000/bus" -e "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus")
 
-    if container_running; then
+    if container_running "$CONTAINER"; then
         # exec path: quiet on stdout - podman prints the container id
         # which means nothing here and only pollutes the shell.
         podman exec -d "$CONTAINER" /usr/local/bin/entrypoint.sh "$@" >/dev/null 2>&1 \
@@ -135,20 +138,43 @@ cmd_start() {
     fi
 
     sleep 1
-    container_running || warn "container $CONTAINER did not stay up, check image and mounts"
+    container_running "$CONTAINER" || warn "container $CONTAINER did not stay up, check image and mounts"
 }
 
 # ---- dispatch -------------------------------------------------------------
 
 CMD="${1:-start}"
+[ $# -gt 0 ] && shift
+
+# Plain specials first.
 case "$CMD" in
-    build)        shift; cmd_build run ;;
-    build+test)   shift; cmd_build test ;;
-    build+breeze) shift; cmd_build run 1 ;;
-    build+start)  shift; cmd_build run; cmd_start "$@" ;;
-    stop)         shift; cmd_stop ;;
-    status)       shift; cmd_status ;;
-    start)        shift; cmd_start "$@" ;;
-    help|-h|--help) shift; cmd_help ;;
-    *)            cmd_start "$@" ;;
+    stop)   cmd_stop ;;
+    status) cmd_status ;;
+    help|-h|--help) cmd_help ;;
+    *)
+        # Token grammar: '+'-joined build/start/test/breeze; anything
+        # else in the first word means it is a 1C argument -> start.
+        DO_BUILD=0
+        DO_START=0
+        VARIANT_TOKENS=()
+        KNOWN=1
+        IFS='+' read -ra TOKENS <<< "$CMD"
+        for token in "${TOKENS[@]}"; do
+            case "$token" in
+                build)  DO_BUILD=1 ;;
+                start)  DO_START=1 ;;
+                test|breeze) VARIANT_TOKENS+=("$token") ;;
+                *)      KNOWN=0; break ;;
+            esac
+        done
+
+        if [ "$KNOWN" = 0 ]; then
+            cmd_start "$CMD" "$@"
+        else
+            [ "$DO_BUILD" = 1 ] && cmd_build "${VARIANT_TOKENS[@]}"
+            if [ "$DO_START" = 1 ] || { [ "$DO_BUILD" = 0 ] && [ ${#VARIANT_TOKENS[@]} -gt 0 ]; }; then
+                cmd_start "$@"
+            fi
+        fi
+        ;;
 esac
