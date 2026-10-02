@@ -67,7 +67,7 @@ bin/1c-run.sh start 1cv8 ENTERPRISE /IBConnectionString 'File="/home/user/Docume
 |---|---|---|
 | `volumes/home/` | `/home/user` | весь домашний каталог контейнера: профиль клиента (списки баз, настройки, кэши), переживает перезапуски |
 | `volumes/techjournal/` | `/tmp/1c-techjournal` | файлы ТЖ, переживают контейнер (вне home сознательно) |
-| `volumes/licenses/` | `/home/user/.1cv8/1C/1cv8/conf` | community-лицензия |
+| `volumes/licenses/` | `/home/user/.1cv8/1C/1cv8/conf` | лицензия |
 | `volumes/logconf/` | (одиночный файл) | `logcfg.xml` — монтируется в conf клиента, только если существует |
 
 Каталоги создаются автоматически при первом запуске. Весь каталог

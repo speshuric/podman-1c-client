@@ -122,7 +122,7 @@ cmd_start() {
         -v "$V/home:/home/user"
         # Tech journal (1C-specific format): out of home by design.
         -v "$V/techjournal:/tmp/1c-techjournal"
-        # Community license (rw): the client keeps licenses in its conf dir.
+        # license (rw): the client keeps licenses in its conf dir.
         -v "$V/licenses:/home/user/.1cv8/1C/1cv8/conf"
         -v "$X11_SOCKET:/tmp/.X11-unix"
         -e "DISPLAY=$DISPLAY_VALUE"
