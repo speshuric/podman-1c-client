@@ -53,6 +53,11 @@ bin/1c-run.sh stop                           # остановить
 
 Приёмочные проверки — [docs/acceptance.md](docs/acceptance.md).
 
+## Лицензия
+
+MIT — [LICENSE](LICENSE). Дистрибутивы платформы 1С и сама платформа
+распространяются по лицензии 1С и в проект не входят.
+
 ## Статус
 
 см. TODO/ROADMAP.md и CHANGELOG.md
