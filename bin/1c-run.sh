@@ -20,7 +20,7 @@
 #   Examples: build+test, build+breeze, build+start, build+start+test.
 #   Plain `test` / `breeze` mean start (that variant had better be built).
 # Examples:
-#   1c-run.sh start 1cv8c /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
+#   1c-run.sh start 1cv8c /IBConnectionString 'File="/home/user/Documents/InfoBase"'
 #   1c-run.sh start 1cv8 DESIGNER /IBConnectionString 'File="..."'
 #
 # Platform version selects the image and container name:
@@ -69,6 +69,22 @@ cmd_build() {
         esac
     done
     mkdir -p "$V"
+    # build+breeze also turns the theme on in the container home profile:
+    # without the setting nothing changes visually and the variant is
+    # lost ("built but you cannot find it"). Plain build restores the
+    # default look by removing the theme line.
+    local ini="$V/home/.config/gtk-3.0/settings.ini"
+    if [ "$breeze" = 1 ]; then
+        mkdir -p "$(dirname "$ini")"
+        touch "$ini"
+        grep -q "^gtk-theme-name=" "$ini" \
+            && sed -i 's/^gtk-theme-name=.*/gtk-theme-name=Breeze/' "$ini" \
+            || echo "gtk-theme-name=Breeze" >> "$ini"
+        echo "breeze: theme enabled in $ini"
+    elif [ -f "$ini" ] && grep -q "^gtk-theme-name=" "$ini"; then
+        sed -i '/^gtk-theme-name=/d' "$ini"
+        echo "breeze: theme setting removed from $ini"
+    fi
     podman build \
         --build-arg DISTR_CLIENT="distr/1c-${PLATFORM_VERSION}" \
         --build-arg PLATFORM_VERSION="${PLATFORM_VERSION}" \
@@ -99,15 +115,15 @@ cmd_start() {
         exit 1
     fi
 
-    mkdir -p "$V/home" "$V/exchange" "$V/techjournal" "$V/client-profile" "$V/licenses" "$V/logconf"
+    mkdir -p "$V/home" "$V/techjournal" "$V/licenses" "$V/logconf"
 
     local mounts=(
-        -v "$V/home:/home/ubuntu"
-        -v "$V/exchange:/exchange"
-        -v "$V/logconf:/opt/1cv8/logconf:ro"
-        -v "$V/techjournal:/home/ubuntu/techjournal"
-        -v "$V/client-profile:/home/ubuntu/.1cv8/1C/1cv8"
-        -v "$V/licenses:/home/ubuntu/.1cv8/1C/1cv8/conf"
+        # Persistent home: client profile (bases, settings) lives here.
+        -v "$V/home:/home/user"
+        # Tech journal (1C-specific format): out of home by design.
+        -v "$V/techjournal:/tmp/1c-techjournal"
+        # Community license (rw): the client keeps licenses in its conf dir.
+        -v "$V/licenses:/home/user/.1cv8/1C/1cv8/conf"
         -v "$X11_SOCKET:/tmp/.X11-unix"
         -e "DISPLAY=$DISPLAY_VALUE"
         -e "PLATFORM_VERSION=$PLATFORM_VERSION"
@@ -118,6 +134,13 @@ cmd_start() {
     # Host session bus: desktop notifications (and a chance of portal
     # dialogs; the 1C file dialogs do not use the portal, adr/0008).
     [ -S "$BUS_SOCKET" ] && mounts+=(-v "$BUS_SOCKET:/run/user/1000/bus" -e "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus")
+
+    # Tech journal config: mounted as a single file into the client conf
+    # directory when present (its <log location> points to
+    # /tmp/1c-techjournal). Without logcfg.xml the TJ is simply off.
+    if [ -r "$V/logconf/logcfg.xml" ]; then
+        mounts+=(-v "$V/logconf/logcfg.xml:/home/user/.1cv8/1C/1cv8/conf/logcfg.xml:ro")
+    fi
 
     if container_running "$CONTAINER"; then
         # exec path: quiet on stdout - podman prints the container id

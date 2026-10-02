@@ -21,21 +21,20 @@ bin/1c-run.sh [команда] [аргументы...]
 | `help` | справка по командам |
 
 Неизвестная первая команда трактуется как `start`: удобно вызывать
-сразу бинарник (`bin/1c-run.sh 1cv8c …`) или старые имена типов
-(`thin`, `thick`, `designer`), которые теперь понимает 1С сама:
+сразу бинарник (`bin/1c-run.sh 1cv8c ...`):
 
 ```bash
 # стартовый диалог (1cv8 без аргументов)
 bin/1c-run.sh
 
 # тонкий клиент на файловой базе
-bin/1c-run.sh start 1cv8c /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
+bin/1c-run.sh start 1cv8c /IBConnectionString 'File="/home/user/Documents/InfoBase"'
 
 # конфигуратор
-bin/1c-run.sh start 1cv8 DESIGNER /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
+bin/1c-run.sh start 1cv8 DESIGNER /IBConnectionString 'File="/home/user/Documents/InfoBase"'
 
 # толстый клиент (обычное приложение = тот же бинарник 1cv8)
-bin/1c-run.sh start 1cv8 ENTERPRISE /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
+bin/1c-run.sh start 1cv8 ENTERPRISE /IBConnectionString 'File="/home/user/Documents/InfoBase"'
 ```
 
 В режиме `start` при живом контейнере выполняется `podman exec -d`
@@ -66,22 +65,38 @@ bin/1c-run.sh start 1cv8 ENTERPRISE /IBConnectionString 'File="/home/ubuntu/Docu
 
 | Каталог хоста | В контейнере | Содержимое |
 |---|---|---|
-| `volumes/home/` | `/home/ubuntu` | весь домашний каталог контейнера (переживает перезапуски) |
-| `volumes/exchange/` | `/exchange` | обмен файлами (виден в диалогах по пути `/exchange`) |
-| `volumes/logconf/` | `/opt/1cv8/logconf` (ro) | `logcfg.xml` для ТЖ |
-| `volumes/techjournal/` | `/home/ubuntu/techjournal` | файлы ТЖ, переживают контейнер |
-| `volumes/client-profile/` | `/home/ubuntu/.1cv8/1C/1cv8` | профиль: списки баз, настройки |
-| `volumes/licenses/` | `/home/ubuntu/.1cv8/1C/1cv8/conf` | community-лицензия |
+| `volumes/home/` | `/home/user` | весь домашний каталог контейнера: профиль клиента (списки баз, настройки, кэши), переживает перезапуски |
+| `volumes/techjournal/` | `/tmp/1c-techjournal` | файлы ТЖ, переживают контейнер (вне home сознательно) |
+| `volumes/licenses/` | `/home/user/.1cv8/1C/1cv8/conf` | community-лицензия |
+| `volumes/logconf/` | (одиночный файл) | `logcfg.xml` — монтируется в conf клиента, только если существует |
 
 Каталоги создаются автоматически при первом запуске. Весь каталог
 `volumes/` игнорируется git.
 
 ## Подключение технологического журнала
 
-Положить `logcfg.xml` в `volumes/logconf/`. Клиенты 1С ищут этот файл
-по путям внутри контейнера; каталог `/opt/1cv8/logconf` монтируется
-read-only. Точные пути подхватывания (директива `<log location=…>`)
-указывайте на `/home/ubuntu/techjournal`.
+1. Отредактируйте `volumes/logconf/logcfg.xml` (рабочий пример лежит
+   рядом, в git не попадает). `<log location>` должен указывать на
+   `/tmp/1c-techjournal`.
+2. Запустите клиента обычным способом — файл монтируется в
+   `/home/user/.1cv8/1C/1cv8/conf/logcfg.xml`; клиенты 8.3.27.2342
+   ищут его именно в этом каталоге (проверено strace).
+3. Файлы ТЖ: `volumes/techjournal/1cv8_<pid>/ГГММДДЧЧ.log`, время
+   контейнера — UTC. Каталог процесса создаётся по первому событию;
+   пустой `.log` (3 байта, BOM) = процесс жив, событий пока нет.
+
+Проверено на 8.3.27.2342:
+
+- работают точечные события:
+  `<event><eq property="name" value="EXCP"/></event>` (а также CONN,
+  SCALL, SDBL);
+- ТЖ — специальный формат 1С: не направляйте туда логи других утилит.
+
+Пример строки события:
+
+```
+46:52.170005-3,SDBL,1,level=DEBUG,process=1cv8,OSThread=36,Usr=Админ,DBMS=DBV8DBEng,DataBase=InfoBase,Trans=0,Sdbl=GET NGENERATIONS,Rows=1
+```
 
 ## D-Bus хоста (уведомления и порталы)
 

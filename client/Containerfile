@@ -79,10 +79,19 @@ RUN set -e; V=/opt/1cv8/x86_64/${PLATFORM_VERSION}; C=/opt/1cv8/common; \
 # gtk3 a11y tries to talk to dbus (not present by design); silence it.
 ENV NO_AT_BRIDGE=1
 
-# uid 1000 user shipped by ubuntu; with --userns=keep-id it maps to the
-# host user, so files in mounted volumes get host ownership.
-USER ubuntu
-WORKDIR /home/ubuntu
+# Rename the stock ubuntu user (uid 1000) to "user": the project talks
+# about "the container user", and other base distros (Debian, Fedora)
+# name uid 1000 differently. Renaming keeps the uid, so --userns=keep-id
+# still maps it to the host user and volume files keep host ownership.
+# HOME moves to /home/user with the account.
+RUN usermod -l user -d /home/user -m ubuntu && \
+    groupmod -n user ubuntu && \
+    chown -R user:user /home/user
+
+# uid 1000 user; with --userns=keep-id it maps to the host user, so
+# files in mounted volumes get host ownership.
+USER user
+WORKDIR /home/user
 
 COPY client/entrypoint.sh /usr/local/bin/entrypoint.sh
 

@@ -4,7 +4,7 @@
 #   bin: 1cv8c | 1cv8 | 1cestart  - launched as is
 #   anything else - launched as 1cv8 (args passed through)
 # Examples:
-#   entrypoint.sh 1cv8c /IBConnectionString 'File="/home/ubuntu/Documents/InfoBase"'
+#   entrypoint.sh 1cv8c /IBConnectionString 'File="/home/user/Documents/InfoBase"'
 #   entrypoint.sh 1cv8 DESIGNER /IBConnectionString 'File="..."'
 #   entrypoint.sh ENTERPRISE ...   (unknown word -> 1cv8 ENTERPRISE ...)
 # The container lives while any client process is running.
@@ -34,7 +34,9 @@ launch_client() {
         1cv8c)    "$BIN_DIR/1cv8c" "$@" & ;;
         1cv8)     "$BIN_DIR/1cv8" "$@" & ;;
         1cestart) "$COMMON_DIR/1cestart" "$@" & ;;
-        *)        "$BIN_DIR/1cv8" "$@" & ;;
+        # Unknown word = the first argument of 1cv8 itself (DESIGNER,
+        # ENTERPRISE, a connection string...) - pass it through, not drop.
+        *)        "$BIN_DIR/1cv8" "$bin" "$@" & ;;
     esac
 }
 
