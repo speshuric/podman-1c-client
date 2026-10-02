@@ -34,9 +34,10 @@ ARG CLIENT_COMPONENTS="client_full,client_thin,client_thin_fib,v8_install_deps,r
 # v8_install_deps on 24.04 fails to run apt itself (its package list ends
 # up as a single argument), so its deps are installed here instead. The
 # list is the one the installer reports plus libcups2 (needed by 1cv8,
-# not mentioned by the installer). zenity/evince pull gtk3 and glib;
+# not mentioned by the installer). fonts-roboto is required by the 8.5.1
+# installer; harmless for 8.3. zenity/evince pull gtk3 and glib;
 # libglu1-mesa pulls libGL; webkit2gtk-4.1 covers the browser field.
-ARG V8_PACKAGES="policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 ttf-mscorefonts-installer"
+ARG V8_PACKAGES="policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 fonts-roboto ttf-mscorefonts-installer"
 
 RUN sed -i -E "s/http:\/\/(archive|security)\.ubuntu\.com\/ubuntu\//http:\/\/${PACKAGE_MIRROR}\/ubuntu\//g" /etc/apt/sources.list.d/ubuntu.sources && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \

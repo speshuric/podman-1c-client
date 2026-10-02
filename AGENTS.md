@@ -194,7 +194,7 @@ Breeze, «недетерминизм» языка интерфейса).
 ├── TODO/                         # вехи (идентификаторы живут только тут)
 ├── distr/                        # дистрибутивы платформы (в .gitignore)
 │   ├── 1c-8.3.27.2342/setup-full-*.run
-│   └── 1c-8.5.1_1522/setup-full-*.run
+│   └── 1c-8.5.1.1522/setup-full-*.run
 ├── client/                       # образ клиента: Containerfile, entrypoint.sh
 ├── bin/                          # хостовые скрипты запуска
 ├── volumes/                      # тома контейнера (в .gitignore целиком)

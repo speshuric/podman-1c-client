@@ -29,7 +29,7 @@ bin/1c-run.sh help           # справка по командам
 | `PACKAGE_MIRROR` | `mirror.yandex.ru` | apt-зеркало Ubuntu |
 | `CLIENT_COMPONENTS` | `client_full,client_thin,client_thin_fib,v8_install_deps,ru` | компоненты установщика 1С |
 | `PACKAGES` | `bash locales ca-certificates` | базовые apt-пакеты образа |
-| `V8_PACKAGES` | `policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 ttf-mscorefonts-installer` | зависимости платформы (см. ниже) |
+| `V8_PACKAGES` | `policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 fonts-roboto ttf-mscorefonts-installer` | зависимости платформы (см. ниже) |
 | `PACKAGES_DEV` | `file strace xvfb x11-apps mc nano less bash-completion jq` | отладочные пакеты, ставятся только в `MODE=test` |
 
 Тег образа содержит версию платформы — по нему скрипт запуска выбирает
@@ -50,11 +50,21 @@ bin/1c-run.sh help           # справка по командам
 
 ```bash
 PLATFORM_VERSION=8.5.1.1522 bin/1c-run.sh build
+PLATFORM_VERSION=8.5.1.1522 bin/1c-run.sh   # запуск собранной версии
 ```
+
+Тег образа включает версию платформы, поэтому сборка другой версии не
+затирает образ 8.3: живут оба тега, каждый запуск использует свой.
+Проверено на 8.5.1.1522: сборка и запуск (2026-10-02).
 
 Ограничение: шаг подмены webkit (ADR-0002) требует наличия `.wk41`-файлов
 в дистрибутиве; для новой версии платформы их наличие нужно проверить
 перед сборкой (`ls <образ>/…*.wk41`).
+
+Установщик 8.5.1 требует пакет `fonts-roboto` (в 24.04 он есть в
+universe) — добавлен в `V8_PACKAGES`; иначе установщик завершает
+распаковку с сообщением про отсутствующие пакеты (платформа при этом
+ставится, но зависимости надо ставить руками).
 
 ## Что делает сборка
 
