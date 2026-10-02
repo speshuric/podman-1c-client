@@ -1,0 +1,100 @@
+# Сборка образа клиента 1С
+
+Сборка выполняется скриптом запуска (см. [run.md](run.md)); вручную —
+`podman build` с аргументами ниже.
+
+## Команды
+
+```bash
+bin/1c-run.sh build          # рабочий образ: localhost/1c-client:<версия>
+bin/1c-run.sh build+test     # отладочный: localhost/1c-client:<версия>-test
+bin/1c-run.sh build+breeze   # рабочий образ + Breeze GTK-тема: <версия>-breeze
+bin/1c-run.sh build+start    # рабочий образ + запуск клиента
+bin/1c-run.sh help           # справка по командам
+```
+
+## Аргументы сборки
+
+| Аргумент | По умолчанию | Назначение |
+|---|---|---|
+| `DISTR_CLIENT` | — | путь к каталогу дистрибутива внутри контекста сборки, напр. `distr/1c-8.3.27.2342` |
+| `PLATFORM_VERSION` | — | версия платформы, должна совпадать с именем каталога версии |
+| `MODE` | `run` | `run` — только рантайм; `test` — добавляет отладочные пакеты (`PACKAGES_DEV`) |
+| `BREEZE` | `0` | `1` — добавить `breeze-gtk-theme` (KDE-вид GTK-диалогов 1С, включается пользователем в `~/.config/gtk-3.0/settings.ini`) |
+| `PACKAGE_MIRROR` | `mirror.yandex.ru` | apt-зеркало Ubuntu |
+| `CLIENT_COMPONENTS` | `client_full,client_thin,client_thin_fib,v8_install_deps,ru` | компоненты установщика 1С |
+| `PACKAGES` | `bash locales ca-certificates` | базовые apt-пакеты образа |
+| `V8_PACKAGES` | `policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 ttf-mscorefonts-installer` | зависимости платформы (см. ниже) |
+| `PACKAGES_DEV` | `file strace xvfb x11-apps mc nano less bash-completion jq` | отладочные пакеты, ставятся только в `MODE=test` |
+
+Тег образа содержит версию платформы — по нему скрипт запуска выбирает
+образ. Тестовый образ получает суффикс `-test`, образ с темой — `-breeze`;
+рабочий тег они не перезаписывают.
+
+Про Breeze: тема кладётся в образ, но GTK-настройки контейнера не
+трогаются — вид диалогов остаётся системным GTK, пока пользователь сам
+не включит `gtk-theme-name=Breeze` в
+`volumes/home/.config/gtk-3.0/settings.ini`. История: принудительная
+тема считалась «лечением» зависания окон (ADR-0006, опровергнуто).
+
+## Сборка другой версии
+
+Меняется только `PLATFORM_VERSION` (и каталог дистрибутива
+`distr/1c-<версия>/setup-full-<версия>-x86_64.run`):
+
+```bash
+PLATFORM_VERSION=8.5.1.1522 bin/1c-run.sh build
+```
+
+Ограничение: шаг подмены webkit (ADR-0002) требует наличия `.wk41`-файлов
+в дистрибутиве; для новой версии платформы их наличие нужно проверить
+перед сборкой (`ls <образ>/…*.wk41`).
+
+## Что делает сборка
+
+1. ubuntu:24.04 (26.04 давала зависание первого запуска — ADR-0007),
+   apt-зеркало, локаль `ru_RU.UTF-8`, EULA mscorefonts.
+2. apt-пакеты: базовые + зависимости платформы. Компонент
+   `v8_install_deps` на 24.04 не работает (его список пакетов уходит в
+   apt одним аргументом), поэтому зависимости ставятся сборкой: GTK3,
+   webkit2gtk-4.1, mscorefonts (Arial и др. — предупреждение 1С о
+   шрифтах уходит), libcups2 и др.
+3. Unattended-установка платформы: конфигуратор+толстый (`client_full`),
+   тонкий (`client_thin`, `client_thin_fib`), русские ресурсы (`ru`).
+4. Подмена UI-бандлов на webkit-4.1 варианты (ADR-0002); удаление
+   бандлов `libstdc++`/`libgcc_s` из каталога версии и `common` —
+   системные новее (GLIBCXX_3.4.29+ нужен webkit-бандлам).
+5. `NO_AT_BRIDGE=1` (a11y-GTK в контейнере молчит).
+6. Пользователь ubuntu (uid 1000), `entrypoint.sh` как ENTRYPOINT.
+
+## Проверка собранного образа
+
+```bash
+podman run --rm --entrypoint bash localhost/1c-client:8.3.27.2342 \
+  -c 'cd /opt/1cv8/x86_64/8.3.27.2342 && for b in 1cv8 1cv8c 1cv8s /opt/1cv8/common/1cestart; do ldd $b | grep -c "not found" | xargs echo "$b missing:"; done'
+```
+
+Все четыре бинарника должны вывести `missing: 0`, и
+`fc-list | grep -ci arial` — не ноль.
+
+## Библиотеки по справке 1С (фактическое состояние образа)
+
+Справка платформы («Особенности работы в Linux») требует библиотеки из
+таблицы ниже. Их состояние в образе (проверено 2026-10-02,
+`ls` + `ldd` + `ldconfig -p` на собранном образе):
+
+| Библиотека | Требование справки | В образе |
+|---|---|---|
+| ImageMagick (`libMagickWand`/`libWand`/`libMagickWand-6.Q16`) | 6.2.8+ (SVG: 6.6.9+) | **бандл платформы** `libMagickWand-7.Q8.so.10` + `libMagickCore` + `libMagick++` — самодостаточен (замаплен в живом `1cv8`); системный ImageMagick не ставится — другой soname, платформа его не ищет |
+| Fontconfig (`libfontconfig`) | 2.3.0+ | системный (транзитивно с gtk/evince) |
+| FreeType (`libfreetype`) | 2.1.9+ | системный (транзитивно) |
+| Libgsf (`libgsf-1`) | 1.10.1+ | **бандл платформы** `libgsf-v8.so` |
+| Glib (`libglib-2.0`) | 2.12.4+ | системный (gtk3) |
+| UnixOdbc (`libodbc`) | 2.2.11+ | **отсутствует**; ни один `.so` платформы его не требует — ODBC-драйвер грузится по требованию (внешние источники данных). Если понадобится: пакет `unixodbc` (есть в 24.04) |
+| Kerberos (`libkrb5`) | 1.4.2+ | системный (`libkrb5support`/`libkrb5`) |
+| GSS-API Kerberos (`libgssapi_krb5`) | 1.4.2+ | системный |
+| MS Core Fonts (Arial и др.) | — | `ttf-mscorefonts-installer` (EULA принят при сборке); без них 1С предупреждает при старте клиента |
+
+Примечание про бандлы: платформа несёт свои копии ImageMagick и libgsf,
+собранные под неё; системные пакеты тех же библиотек с иными soname
+платформой не подхватываются — не ставить их «на всякий случай».

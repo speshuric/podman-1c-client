@@ -1,0 +1,24 @@
+# Дистрибутивы
+distr/*
+!distr/README.md
+
+# Временные файлы
+run/
+
+# Тома контейнера: данные живут на хосте, в git не попадают целиком
+volumes/
+
+# Python / uv (наследие шаблона, на случай утилит)
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Редакторы
+*.swp
+*~
+.vscode/
+.idea/

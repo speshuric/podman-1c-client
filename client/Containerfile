@@ -1,0 +1,89 @@
+# 1C:Enterprise 8.3 client image (client_full + client_thin).
+# Base: ubuntu:24.04 (26.04 had a first-launch hang, see adr/0007).
+#
+# Build (version comes from the distr directory layout):
+#   bin/1c-run.sh build            - regular image
+#   bin/1c-run.sh build+test       - with debug tooling (PACKAGES_DEV)
+#   bin/1c-run.sh build+breeze     - regular image + Breeze GTK theme
+#   bin/1c-run.sh build+start      - build, then start a client
+#
+# A different platform version = change the PLATFORM_VERSION argument only.
+
+FROM ubuntu:24.04
+
+ARG PACKAGE_MIRROR="mirror.yandex.ru"
+# Runtime packages only. Platform dependencies come from the official
+# v8_install_deps component (it apt-installs everything itself, including
+# policykit-1, webkit2gtk-4.1, fonts, libunwind8).
+ARG PACKAGES="bash locales ca-certificates"
+# Debug tooling for MODE=test builds (strace, editors, X inspection).
+ARG PACKAGES_DEV="file strace xvfb x11-apps mc nano less bash-completion jq"
+# MODE=run (default) keeps only what runtime needs; MODE=test adds PACKAGES_DEV
+# and keeps debug tooling in the image.
+ARG MODE="run"
+# BREEZE=1 adds the Breeze GTK theme (KDE look for 1C GTK dialogs).
+# bin/1c-run.sh build+breeze sets it. Theme selection is NOT forced:
+# the dialogs keep the default GTK look unless the user opts in via
+# ~/.config/gtk-3.0/settings.ini in the home volume (see adr/0006).
+ARG BREEZE="0"
+ARG BREEZE_PACKAGES="breeze-gtk-theme"
+
+ARG PLATFORM_VERSION
+ARG DISTR_CLIENT
+ARG CLIENT_COMPONENTS="client_full,client_thin,client_thin_fib,v8_install_deps,ru"
+# v8_install_deps on 24.04 fails to run apt itself (its package list ends
+# up as a single argument), so its deps are installed here instead. The
+# list is the one the installer reports plus libcups2 (needed by 1cv8,
+# not mentioned by the installer). zenity/evince pull gtk3 and glib;
+# libglu1-mesa pulls libGL; webkit2gtk-4.1 covers the browser field.
+ARG V8_PACKAGES="policykit-1 zenity x11-utils evince libglu1-mesa libwebkit2gtk-4.1-0 libcups2 ttf-mscorefonts-installer"
+
+RUN sed -i -E "s/http:\/\/(archive|security)\.ubuntu\.com\/ubuntu\//http:\/\/${PACKAGE_MIRROR}\/ubuntu\//g" /etc/apt/sources.list.d/ubuntu.sources && \
+    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
+    apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ${PACKAGES} ${V8_PACKAGES} $( [ "${BREEZE}" = 1 ] && echo ${BREEZE_PACKAGES} ) $( [ "${MODE}" = test ] && echo ${PACKAGES_DEV} ) && \
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's/^# *\(ru_RU.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
+    locale-gen && \
+    update-locale LANG=ru_RU.UTF-8 && \
+    fc-cache -f
+
+ENV LANG=ru_RU.UTF-8
+
+# Install the platform. Ubuntu 24.04 has real policykit-1 and webkit2gtk
+# 4.1 only; the distro bundles are built for webkit 4.0, so the .wk41
+# swap below stays mandatory (see adr/0002).
+RUN --mount=type=bind,source=${DISTR_CLIENT},target=/tmp/distr,ro \
+    DEBIAN_FRONTEND=noninteractive /tmp/distr/setup-full-${PLATFORM_VERSION}-x86_64.run \
+        --mode unattended --unattendedmodeui none \
+        --installer-language ru \
+        --enable-components ${CLIENT_COMPONENTS} && \
+    rm -rf /var/lib/apt/lists/*
+
+# The distro ships UI libs built against webkit2gtk 4.0 plus ".wk41"
+# variants built against webkit2gtk 4.1 (the only one Ubuntu ships).
+# Make the wk41 variants primary; keep originals as .wk40.
+# Bundled libstdc++/libgcc_s are older than the system ones and conflict
+# with webkit 4.1 (needs GLIBCXX_3.4.29+); drop them in both the version
+# directory (RUNPATH $ORIGIN) and common.
+RUN set -e; V=/opt/1cv8/x86_64/${PLATFORM_VERSION}; C=/opt/1cv8/common; \
+     mv $V/libwx_gtk3u-3.0.so.0.1.0 $V/libwx_gtk3u-3.0.so.0.1.0.wk40 && \
+     cp $V/libwx_gtk3u-3.0.so.0.1.0.wk41 $V/libwx_gtk3u-3.0.so.0.1.0 && \
+     mv $V/webkit2_extu-3.0.so $V/webkit2_extu-3.0.so.wk40 && \
+     cp $V/webkit2_extu-3.0.so.wk41 $V/webkit2_extu-3.0.so && \
+     mv $C/libwx_gtk3u-3.0.so.0.1.0 $C/libwx_gtk3u-3.0.so.0.1.0.wk40 && \
+     cp $V/libwx_gtk3u-3.0.so.0.1.0.wk41 $C/libwx_gtk3u-3.0.so.0.1.0 && \
+     rm -f $V/libstdc++.so.6 $V/libstdc++.so.6.0.28 $V/libgcc_s.so.1 \
+           $C/libstdc++.so.6 $C/libstdc++.so.6.0.28 $C/libgcc_s.so.1
+
+# gtk3 a11y tries to talk to dbus (not present by design); silence it.
+ENV NO_AT_BRIDGE=1
+
+# uid 1000 user shipped by ubuntu; with --userns=keep-id it maps to the
+# host user, so files in mounted volumes get host ownership.
+USER ubuntu
+WORKDIR /home/ubuntu
+
+COPY client/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
