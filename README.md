@@ -5,6 +5,10 @@
 Arch Linux (KDE Plasma, Wayland), ничего не устанавливая в систему хоста.
 Предположительно, можно несложно адаптировать для других дистрибутивов и окружений.
 
+[Публикация на Infostart](https://infostart.ru/1c/articles/2807378/)
+
+![Infostart](https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg)
+
 Постановка задачи — [TASK.md](TASK.md), для агентов — [AGENTS.md](AGENTS.md).
 
 ## Как это устроено
